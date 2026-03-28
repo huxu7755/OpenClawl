@@ -1424,6 +1424,83 @@ export function startUiServer(port: number, toolClient: ToolClient): Server {
         return writeJson(res, result.mode === "blocked" ? 403 : 200, result);
       }
 
+      // === Gateway Startup Check API ===
+      if (method === "GET" && path === "/api/startup-check") {
+        assertAllowedQueryParams(url.searchParams, ["limit"], true);
+        const limit = readPositiveIntQuery(url.searchParams.get("limit"), "limit", 10, true, 100);
+        const { readRecentStartupChecks } = await import("../runtime/gateway-startup-check.js");
+        const checks = await readRecentStartupChecks(limit);
+        return writeJson(res, 200, {
+          ok: true,
+          count: checks.length,
+          checks,
+        });
+      }
+
+      if (method === "POST" && path === "/api/startup-check") {
+        assertMutationAuthorized(req, "/api/startup-check");
+        assertAllowedQueryParams(url.searchParams, [], true);
+        const { runGatewayStartupCheck } = await import("../runtime/gateway-startup-check.js");
+        const result = await runGatewayStartupCheck({ gatewayStatus: "running" });
+        return writeJson(res, 200, {
+          ok: true,
+          result,
+        });
+      }
+
+      // === Agent Activity Log API ===
+      if (method === "GET" && path === "/api/agent-activities") {
+        assertAllowedQueryParams(url.searchParams, ["agentId", "taskId", "status", "from", "to", "limit"], true);
+        const limit = readPositiveIntQuery(url.searchParams.get("limit"), "limit", 100, true, 500);
+        const { queryAgentActivities } = await import("../runtime/agent-activity-log.js");
+        const result = await queryAgentActivities({
+          agentId: url.searchParams.get("agentId") || undefined,
+          taskId: url.searchParams.get("taskId") || undefined,
+          status: url.searchParams.get("status") as any || undefined,
+          from: url.searchParams.get("from") || undefined,
+          to: url.searchParams.get("to") || undefined,
+          limit,
+        });
+        return writeJson(res, 200, {
+          ok: true,
+          ...result,
+        });
+      }
+
+      if (method === "GET" && path === "/api/agent-activities/stats") {
+        assertAllowedQueryParams(url.searchParams, ["agentId"], true);
+        const { getAgentActivityStats } = await import("../runtime/agent-activity-log.js");
+        const stats = await getAgentActivityStats(url.searchParams.get("agentId") || undefined);
+        return writeJson(res, 200, {
+          ok: true,
+          stats,
+        });
+      }
+
+      if (method === "POST" && path === "/api/agent-activities") {
+        assertMutationAuthorized(req, "/api/agent-activities");
+        assertJsonContentType(req);
+        const payload = expectObject(await readJsonBody(req), "agent activity payload");
+        const { logAgentActivity } = await import("../runtime/agent-activity-log.js");
+        type ActivityStatus = "started" | "completed" | "failed" | "cancelled" | "timeout";
+        const entry = await logAgentActivity({
+          agentId: typeof payload.agentId === "string" ? payload.agentId : "main",
+          taskId: typeof payload.taskId === "string" ? payload.taskId : `task-${Date.now()}`,
+          taskTitle: typeof payload.taskTitle === "string" ? payload.taskTitle : undefined,
+          projectId: typeof payload.projectId === "string" ? payload.projectId : undefined,
+          projectTitle: typeof payload.projectTitle === "string" ? payload.projectTitle : undefined,
+          status: (typeof payload.status === "string" ? payload.status : "started") as ActivityStatus,
+          startedAt: typeof payload.startedAt === "string" ? payload.startedAt : undefined,
+          completedAt: typeof payload.completedAt === "string" ? payload.completedAt : undefined,
+          error: payload.error && typeof payload.error === "object" ? payload.error as any : undefined,
+          metadata: payload.metadata && typeof payload.metadata === "object" ? payload.metadata as Record<string, unknown> : undefined,
+        });
+        return writeJson(res, 201, {
+          ok: true,
+          entry,
+        });
+      }
+
       if (method === "GET" && path === "/usage-cost") {
         assertAllowedQueryParams(url.searchParams, [], true);
         res.statusCode = 302;

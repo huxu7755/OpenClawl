@@ -16,10 +16,11 @@ import {
 } from "./config";
 import { buildExportBundle, writeExportBundle } from "./runtime/export-bundle";
 import { validateExportFileDryRun } from "./runtime/import-dry-run";
-import { monitorIntervalMs, runMonitorOnce } from "./runtime/monitor";
+import { monitorIntervalMs, runMonitorOnce, initMonitor } from "./runtime/monitor";
 import { pruneStaleAcks } from "./runtime/notification-center";
 import { appendOperationAudit } from "./runtime/operation-audit";
 import { runTaskHeartbeat, runtimeTaskHeartbeatGate } from "./runtime/task-heartbeat";
+import { runGatewayStartupCheck } from "./runtime/gateway-startup-check";
 import { startUiServer } from "./ui/server";
 
 const CONTINUOUS_MODE = process.env.MONITOR_CONTINUOUS === "true";
@@ -63,6 +64,9 @@ async function start(): Promise<void> {
     startUiServer(UI_PORT, client);
   }
 
+  // 初始化监控器（自动运行启动检查和初始化活动追踪）
+  await initMonitor(adapter);
+
   const runMonitorSafely = async (): Promise<void> => {
     try {
       await runMonitorOnce(adapter);
@@ -88,11 +92,40 @@ async function start(): Promise<void> {
 void start();
 
 async function runCommand(
-  command: "backup-export" | "import-validate" | "acks-prune" | "task-heartbeat",
+  command: "backup-export" | "import-validate" | "acks-prune" | "task-heartbeat" | "startup-check",
   adapter: OpenClawReadonlyAdapter,
   arg?: string,
 ): Promise<void> {
   assertCommandOperationGate(command);
+
+  if (command === "startup-check") {
+    try {
+      const result = await runGatewayStartupCheck({ gatewayStatus: "starting" });
+      await appendOperationAudit({
+        action: "startup_check",
+        source: "command",
+        ok: result.alerts.filter((a) => a.level === "critical").length === 0,
+        requestId: "cmd-startup-check",
+        detail: `checked ${result.tasks.total} tasks, ${result.alerts.length} alerts`,
+        metadata: {
+          tasks: result.tasks,
+          alertsCount: result.alerts.length,
+          recommendations: result.recommendations,
+        },
+      });
+      console.log("[mission-control] startup check", result);
+    } catch (error) {
+      await appendOperationAudit({
+        action: "startup_check",
+        source: "command",
+        ok: false,
+        requestId: "cmd-startup-check",
+        detail: error instanceof Error ? error.message : "startup check failed",
+      });
+      throw error;
+    }
+    return;
+  }
 
   if (command === "backup-export") {
     try {
@@ -217,8 +250,10 @@ async function runCommand(
 }
 
 function assertCommandOperationGate(
-  command: "backup-export" | "import-validate" | "acks-prune" | "task-heartbeat",
+  command: "backup-export" | "import-validate" | "acks-prune" | "task-heartbeat" | "startup-check",
 ): void {
+  // startup-check 是只读操作，不需要 token gate
+  if (command === "startup-check") return;
   if (!LOCAL_TOKEN_AUTH_REQUIRED) return;
   if (LOCAL_API_TOKEN !== "") return;
   throw new Error(
@@ -228,7 +263,7 @@ function assertCommandOperationGate(
 
 function normalizeCommand(
   input: string | undefined,
-): "backup-export" | "import-validate" | "acks-prune" | "task-heartbeat" | undefined {
+): "backup-export" | "import-validate" | "acks-prune" | "task-heartbeat" | "startup-check" | undefined {
   if (!input) return undefined;
   const trimmed = input.trim().toLowerCase();
   if (trimmed === "") return undefined;
@@ -236,8 +271,9 @@ function normalizeCommand(
   if (trimmed === "import-validate") return "import-validate";
   if (trimmed === "acks-prune") return "acks-prune";
   if (trimmed === "task-heartbeat") return "task-heartbeat";
+  if (trimmed === "startup-check") return "startup-check";
   throw new Error(
-    `Unknown command '${input}'. Supported: backup-export, import-validate, acks-prune, task-heartbeat.`,
+    `Unknown command '${input}'. Supported: backup-export, import-validate, acks-prune, task-heartbeat, startup-check.`,
   );
 }
 
