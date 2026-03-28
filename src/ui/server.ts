@@ -238,6 +238,13 @@ const DASHBOARD_SECTIONS = [
   "alerts",
   "replay-audit",
   "settings",
+  "doctor",
+  "channels",
+  "gateway",
+  "nodes",
+  "config",
+  "models",
+  "messages",
 ] as const;
 const CONTROL_CENTER_MAPPING_TASK_IDS = new Set(["due-fast", "todo-second", "already-running", "unassigned"]);
 const LEGACY_DASHBOARD_ROUTE_SECTION = {
@@ -335,6 +342,13 @@ const DASHBOARD_SECTION_LINKS_EN: DashboardSectionLink[] = [
   { key: "docs", label: "Documents", blurb: "Main and active agent core docs" },
   { key: "projects-tasks", label: "Tasks", blurb: "Board, schedule and activity" },
   { key: "settings", label: "Settings", blurb: "Safety and data links" },
+  { key: "doctor", label: "Doctor", blurb: "Health check and auto-fix" },
+  { key: "channels", label: "Channels", blurb: "Messaging channels status" },
+  { key: "gateway", label: "Gateway", blurb: "Gateway control panel" },
+  { key: "nodes", label: "Nodes", blurb: "Device pairing and management" },
+  { key: "config", label: "Config", blurb: "Configuration viewer" },
+  { key: "models", label: "Models", blurb: "Model providers and discovery" },
+  { key: "messages", label: "Messages", blurb: "Send and manage messages" },
 ] as const;
 const ANIMAL_CATALOG = [
   {
@@ -3230,6 +3244,27 @@ function dashboardSectionLinks(language: UiLanguage): DashboardSectionLink[] {
     }
     if (item.key === "projects-tasks") {
       return { ...item, label: "任务", blurb: "任务、排程与活动" };
+    }
+    if (item.key === "doctor") {
+      return { ...item, label: "医生", blurb: "健康检查与自动修复" };
+    }
+    if (item.key === "channels") {
+      return { ...item, label: "频道", blurb: "消息频道状态" };
+    }
+    if (item.key === "gateway") {
+      return { ...item, label: "网关", blurb: "网关控制面板" };
+    }
+    if (item.key === "nodes") {
+      return { ...item, label: "节点", blurb: "设备配对与管理" };
+    }
+    if (item.key === "config") {
+      return { ...item, label: "配置", blurb: "配置查看器" };
+    }
+    if (item.key === "models") {
+      return { ...item, label: "模型", blurb: "模型提供商与发现" };
+    }
+    if (item.key === "messages") {
+      return { ...item, label: "消息", blurb: "发送与管理消息" };
     }
     return { ...item, label: "设置", blurb: "安全与数据连接" };
   });
@@ -7171,6 +7206,13 @@ async function renderHtml(
   if (options.section === "alerts") sectionBody = alertsSection;
   if (options.section === "replay-audit") sectionBody = replaySection;
   if (options.section === "settings") sectionBody = settingsSection;
+  if (options.section === "doctor") sectionBody = renderDoctorSection(options.language);
+  if (options.section === "channels") sectionBody = renderChannelsSection(options.language);
+  if (options.section === "gateway") sectionBody = renderGatewaySection(options.language);
+  if (options.section === "nodes") sectionBody = renderNodesSection(options.language);
+  if (options.section === "config") sectionBody = renderConfigSection(options.language);
+  if (options.section === "models") sectionBody = renderModelsSection(options.language);
+  if (options.section === "messages") sectionBody = renderMessagesSection(options.language);
   const globalVisibilityCard =
     globalVisibilityModel ? renderGlobalVisibilityCard(globalVisibilityModel, options.language) : "";
   const globalVisibilityBlock = options.section === "overview" ? globalVisibilityCard : "";
@@ -18502,4 +18544,270 @@ class RequestValidationError extends Error {
     this.name = "RequestValidationError";
     this.issues = issues;
   }
+}
+
+// ============ New Module Sections ============
+
+function renderDoctorSection(language: UiLanguage): string {
+  const t = (en: string, zh: string) => pickUiText(language, en, zh);
+  return `
+    <section class="dashboard-section" id="doctor-section">
+      <h2>${t("Health Check", "健康检查")}</h2>
+      <div class="section-controls">
+        <button class="btn primary" onclick="runDoctorCheck()">${t("Run Check", "执行检查")}</button>
+        <button class="btn" onclick="runDoctorFix()">${t("Auto Fix", "自动修复")}</button>
+      </div>
+      <div id="doctor-results" class="results-container">
+        <div class="empty-state">${t("Click 'Run Check' to start health diagnosis.", "点击「执行检查」开始健康诊断。")}</div>
+      </div>
+      <script>
+        async function runDoctorCheck() {
+          const res = await fetch('/api/doctor', { method: 'POST' });
+          const data = await res.json();
+          renderDoctorResults(data.result);
+        }
+        async function runDoctorFix() {
+          const res = await fetch('/api/doctor/fix', { method: 'POST' });
+          const data = await res.json();
+          alert(data.fixed ? 'Fixed: ' + data.fixed.join(', ') : 'No fixes applied');
+        }
+        function renderDoctorResults(result) {
+          const container = document.getElementById('doctor-results');
+          container.innerHTML = '<pre>' + JSON.stringify(result, null, 2) + '</pre>';
+        }
+      </script>
+    </section>
+  `;
+}
+
+function renderChannelsSection(language: UiLanguage): string {
+  const t = (en: string, zh: string) => pickUiText(language, en, zh);
+  return `
+    <section class="dashboard-section" id="channels-section">
+      <h2>${t("Channel Management", "频道管理")}</h2>
+      <div class="section-controls">
+        <button class="btn primary" onclick="loadChannels()">${t("Refresh", "刷新")}</button>
+      </div>
+      <div id="channels-results" class="results-container">
+        <div class="loading">${t("Loading...", "加载中...")}</div>
+      </div>
+      <script>
+        async function loadChannels() {
+          const res = await fetch('/api/channels');
+          const data = await res.json();
+          renderChannelsResults(data);
+        }
+        function renderChannelsResults(data) {
+          const container = document.getElementById('channels-results');
+          if (data.channels && data.channels.length > 0) {
+            container.innerHTML = data.channels.map(ch => 
+              '<div class="card"><h3>' + ch.name + '</h3><span class="badge ' + ch.status + '">' + ch.status + '</span></div>'
+            ).join('');
+          } else {
+            container.innerHTML = '<div class="empty-state">${t("No channels configured.", "未配置频道。")}</div>';
+          }
+        }
+        loadChannels();
+      </script>
+    </section>
+  `;
+}
+
+function renderGatewaySection(language: UiLanguage): string {
+  const t = (en: string, zh: string) => pickUiText(language, en, zh);
+  return `
+    <section class="dashboard-section" id="gateway-section">
+      <h2>${t("Gateway Control", "网关控制")}</h2>
+      <div class="section-controls">
+        <button class="btn primary" onclick="startGateway()">${t("Start", "启动")}</button>
+        <button class="btn warn" onclick="stopGateway()">${t("Stop", "停止")}</button>
+        <button class="btn" onclick="restartGateway()">${t("Restart", "重启")}</button>
+        <button class="btn" onclick="checkGateway()">${t("Refresh", "刷新")}</button>
+      </div>
+      <div id="gateway-results" class="results-container">
+        <div class="loading">${t("Loading...", "加载中...")}</div>
+      </div>
+      <script>
+        async function checkGateway() {
+          const res = await fetch('/api/gateway');
+          const data = await res.json();
+          renderGatewayResults(data);
+        }
+        async function startGateway() {
+          await fetch('/api/gateway/start', { method: 'POST' });
+          setTimeout(checkGateway, 2000);
+        }
+        async function stopGateway() {
+          await fetch('/api/gateway/stop', { method: 'POST' });
+          setTimeout(checkGateway, 1000);
+        }
+        async function restartGateway() {
+          await fetch('/api/gateway/restart', { method: 'POST' });
+          setTimeout(checkGateway, 3000);
+        }
+        function renderGatewayResults(data) {
+          const container = document.getElementById('gateway-results');
+          container.innerHTML = '<div class="card"><h3>' + t("Status", "状态") + ': ' + data.status + '</h3>' +
+            '<p>' + t("Port", "端口") + ': ' + data.port + '</p>' +
+            '<p>' + t("Bind", "绑定") + ': ' + data.bind + '</p></div>';
+        }
+        checkGateway();
+      </script>
+    </section>
+  `;
+}
+
+function renderNodesSection(language: UiLanguage): string {
+  const t = (en: string, zh: string) => pickUiText(language, en, zh);
+  return `
+    <section class="dashboard-section" id="nodes-section">
+      <h2>${t("Device Management", "设备管理")}</h2>
+      <div class="section-controls">
+        <button class="btn primary" onclick="loadNodes()">${t("Refresh", "刷新")}</button>
+      </div>
+      <div id="nodes-results" class="results-container">
+        <div class="loading">${t("Loading...", "加载中...")}</div>
+      </div>
+      <script>
+        async function loadNodes() {
+          const res = await fetch('/api/nodes');
+          const data = await res.json();
+          renderNodesResults(data);
+        }
+        function renderNodesResults(data) {
+          const container = document.getElementById('nodes-results');
+          let html = '';
+          if (data.pairedNodes && data.pairedNodes.length > 0) {
+            html += '<h3>' + t("Paired Devices", "已配对设备") + '</h3>';
+            html += data.pairedNodes.map(n => '<div class="card"><strong>' + n.displayName + '</strong> <span class="badge">' + n.status + '</span></div>').join('');
+          }
+          if (data.pendingRequests && data.pendingRequests.length > 0) {
+            html += '<h3>' + t("Pending Requests", "待审批请求") + '</h3>';
+            html += data.pendingRequests.map(r => '<div class="card"><strong>' + r.requestId.slice(0,8) + '</strong> <button onclick="approveNode(\\'' + r.requestId + '\\')">Approve</button></div>').join('');
+          }
+          if (!html) html = '<div class="empty-state">' + t("No devices paired.", "没有配对的设备。") + '</div>';
+          container.innerHTML = html;
+        }
+        async function approveNode(requestId) {
+          await fetch('/api/nodes/approve', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({requestId}) });
+          loadNodes();
+        }
+        loadNodes();
+      </script>
+    </section>
+  `;
+}
+
+function renderConfigSection(language: UiLanguage): string {
+  const t = (en: string, zh: string) => pickUiText(language, en, zh);
+  return `
+    <section class="dashboard-section" id="config-section">
+      <h2>${t("Configuration", "配置管理")}</h2>
+      <div class="section-controls">
+        <button class="btn primary" onclick="loadConfig()">${t("Refresh", "刷新")}</button>
+        <button class="btn" onclick="validateConfig()">${t("Validate", "验证")}</button>
+      </div>
+      <div id="config-results" class="results-container">
+        <div class="loading">${t("Loading...", "加载中...")}</div>
+      </div>
+      <script>
+        async function loadConfig() {
+          const res = await fetch('/api/config');
+          const data = await res.json();
+          renderConfigResults(data);
+        }
+        async function validateConfig() {
+          const res = await fetch('/api/config/validate', { method: 'POST' });
+          const data = await res.json();
+          alert(data.valid ? t('Config is valid', '配置有效') : t('Config has errors', '配置有错误'));
+        }
+        function renderConfigResults(data) {
+          const container = document.getElementById('config-results');
+          container.innerHTML = '<pre>' + JSON.stringify(data.sections, null, 2) + '</pre>';
+        }
+        loadConfig();
+      </script>
+    </section>
+  `;
+}
+
+function renderModelsSection(language: UiLanguage): string {
+  const t = (en: string, zh: string) => pickUiText(language, en, zh);
+  return `
+    <section class="dashboard-section" id="models-section">
+      <h2>${t("Model Providers", "模型提供商")}</h2>
+      <div class="section-controls">
+        <button class="btn primary" onclick="loadModels()">${t("Refresh", "刷新")}</button>
+        <button class="btn" onclick="discoverModels()">${t("Discover Local", "发现本地")}</button>
+      </div>
+      <div id="models-results" class="results-container">
+        <div class="loading">${t("Loading...", "加载中...")}</div>
+      </div>
+      <script>
+        async function loadModels() {
+          const res = await fetch('/api/models');
+          const data = await res.json();
+          renderModelsResults(data);
+        }
+        async function discoverModels() {
+          const res = await fetch('/api/models/discover');
+          const data = await res.json();
+          alert(JSON.stringify(data));
+        }
+        function renderModelsResults(data) {
+          const container = document.getElementById('models-results');
+          if (data.providers && data.providers.length > 0) {
+            container.innerHTML = data.providers.map(p => 
+              '<div class="card"><h3>' + p.name + '</h3><span class="badge ' + p.status + '">' + p.status + '</span><p>' + p.models.length + ' models</p></div>'
+            ).join('');
+          } else {
+            container.innerHTML = '<div class="empty-state">' + t("No model providers configured.", "未配置模型提供商。") + '</div>';
+          }
+        }
+        loadModels();
+      </script>
+    </section>
+  `;
+}
+
+function renderMessagesSection(language: UiLanguage): string {
+  const t = (en: string, zh: string) => pickUiText(language, en, zh);
+  return `
+    <section class="dashboard-section" id="messages-section">
+      <h2>${t("Message Center", "消息中心")}</h2>
+      <div class="section-controls">
+        <button class="btn primary" onclick="showSendForm()">${t("Send Message", "发送消息")}</button>
+        <button class="btn" onclick="loadTemplates()">${t("Templates", "模板")}</button>
+      </div>
+      <div id="messages-results" class="results-container">
+        <div id="send-form" style="display:none;">
+          <select id="msg-channel"><option value="feishu">飞书</option><option value="telegram">Telegram</option></select>
+          <input id="msg-target" placeholder="${t("Target ID", "目标ID")}" />
+          <textarea id="msg-content" placeholder="${t("Message content", "消息内容")}"></textarea>
+          <button class="btn primary" onclick="sendMessage()">${t("Send", "发送")}</button>
+        </div>
+        <div id="msg-history"></div>
+      </div>
+      <script>
+        function showSendForm() { document.getElementById('send-form').style.display = 'block'; }
+        async function sendMessage() {
+          const channel = document.getElementById('msg-channel').value;
+          const target = document.getElementById('msg-target').value;
+          const message = document.getElementById('msg-content').value;
+          const res = await fetch('/api/messages/send', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({channel, target, message})
+          });
+          const data = await res.json();
+          alert(data.ok ? t('Message sent', '消息已发送') : t('Failed', '发送失败'));
+        }
+        async function loadTemplates() {
+          const res = await fetch('/api/messages/templates');
+          const data = await res.json();
+          alert(JSON.stringify(data.templates, null, 2));
+        }
+      </script>
+    </section>
+  `;
 }
