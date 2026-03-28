@@ -1634,6 +1634,142 @@ export function startUiServer(port: number, toolClient: ToolClient): Server {
         return writeText(res, 302, "redirecting", "text/plain; charset=utf-8");
       }
 
+      // === Nodes API ===
+      if (method === "GET" && path === "/api/nodes") {
+        assertAllowedQueryParams(url.searchParams, [], true);
+        const { getNodesOverview } = await import("../runtime/nodes-insights.js");
+        const overview = await getNodesOverview();
+        return writeJson(res, 200, {
+          ok: true,
+          ...overview,
+        });
+      }
+
+      if (method === "POST" && path === "/api/nodes/approve") {
+        assertMutationAuthorized(req, "/api/nodes/approve");
+        assertJsonContentType(req);
+        const payload = expectObject(await readJsonBody(req), "approve payload");
+        const requestId = typeof payload.requestId === "string" ? payload.requestId : "";
+        if (!requestId) throw new RequestValidationError("requestId is required", 400);
+        const { approvePairingRequest } = await import("../runtime/nodes-insights.js");
+        const result = await approvePairingRequest(requestId);
+        return writeJson(res, result.success ? 200 : 400, {
+          ok: result.success,
+          ...result,
+        });
+      }
+
+      if (method === "POST" && path === "/api/nodes/reject") {
+        assertMutationAuthorized(req, "/api/nodes/reject");
+        assertJsonContentType(req);
+        const payload = expectObject(await readJsonBody(req), "reject payload");
+        const requestId = typeof payload.requestId === "string" ? payload.requestId : "";
+        if (!requestId) throw new RequestValidationError("requestId is required", 400);
+        const { rejectPairingRequest } = await import("../runtime/nodes-insights.js");
+        const result = await rejectPairingRequest(requestId);
+        return writeJson(res, result.success ? 200 : 400, {
+          ok: result.success,
+          ...result,
+        });
+      }
+
+      if (method === "POST" && path === "/api/nodes/rename") {
+        assertMutationAuthorized(req, "/api/nodes/rename");
+        assertJsonContentType(req);
+        const payload = expectObject(await readJsonBody(req), "rename payload");
+        const deviceId = typeof payload.deviceId === "string" ? payload.deviceId : "";
+        const newName = typeof payload.name === "string" ? payload.name : "";
+        if (!deviceId || !newName) throw new RequestValidationError("deviceId and name are required", 400);
+        const { renameNode } = await import("../runtime/nodes-insights.js");
+        const result = await renameNode(deviceId, newName);
+        return writeJson(res, result.success ? 200 : 400, {
+          ok: result.success,
+          ...result,
+        });
+      }
+
+      // === Config API ===
+      if (method === "GET" && path === "/api/config") {
+        assertAllowedQueryParams(url.searchParams, [], true);
+        const { getConfigOverview } = await import("../runtime/config-insights.js");
+        const overview = await getConfigOverview();
+        return writeJson(res, 200, {
+          ok: true,
+          ...overview,
+        });
+      }
+
+      if (method === "GET" && path.startsWith("/api/config/")) {
+        const configPath = decodeURIComponent(path.slice("/api/config/".length));
+        assertAllowedQueryParams(url.searchParams, [], true);
+        const { getConfigValue } = await import("../runtime/config-insights.js");
+        const result = await getConfigValue(configPath);
+        return writeJson(res, 200, {
+          ok: true,
+          ...result,
+        });
+      }
+
+      if (method === "PATCH" && path.startsWith("/api/config/")) {
+        assertMutationAuthorized(req, "/api/config/:path");
+        assertJsonContentType(req);
+        const configPath = decodeURIComponent(path.slice("/api/config/".length));
+        const value = await readJsonBody(req);
+        const { setConfigValue } = await import("../runtime/config-insights.js");
+        const result = await setConfigValue(configPath, value);
+        return writeJson(res, result.success ? 200 : 400, {
+          ok: result.success,
+          ...result,
+        });
+      }
+
+      if (method === "POST" && path === "/api/config/validate") {
+        assertMutationAuthorized(req, "/api/config/validate");
+        assertAllowedQueryParams(url.searchParams, [], true);
+        const { validateConfig } = await import("../runtime/config-insights.js");
+        const result = await validateConfig();
+        return writeJson(res, 200, {
+          ok: true,
+          ...result,
+        });
+      }
+
+      // === Models API ===
+      if (method === "GET" && path === "/api/models") {
+        assertAllowedQueryParams(url.searchParams, [], true);
+        const { getModelsOverview } = await import("../runtime/models-insights.js");
+        const overview = await getModelsOverview();
+        return writeJson(res, 200, {
+          ok: true,
+          ...overview,
+        });
+      }
+
+      if (method === "GET" && path === "/api/models/discover") {
+        assertAllowedQueryParams(url.searchParams, [], true);
+        const { discoverLocalModels } = await import("../runtime/models-insights.js");
+        const result = await discoverLocalModels();
+        return writeJson(res, 200, {
+          ok: true,
+          ...result,
+        });
+      }
+
+      if (method === "POST" && path === "/api/models/test") {
+        assertMutationAuthorized(req, "/api/models/test");
+        assertJsonContentType(req);
+        const payload = expectObject(await readJsonBody(req), "test payload");
+        const provider = typeof payload.provider === "string" ? payload.provider : "";
+        const modelId = typeof payload.modelId === "string" ? payload.modelId : "";
+        if (!provider || !modelId) throw new RequestValidationError("provider and modelId are required", 400);
+        const { testModelConnection } = await import("../runtime/models-insights.js");
+        const result = await testModelConnection(provider, modelId);
+        return writeJson(res, result.success ? 200 : 400, {
+          ok: result.success,
+          ...result,
+        });
+      }
+
       if (method === "GET" && path === "/api/replay/index") {
         assertAllowedQueryParams(url.searchParams, ["timelineLimit", "digestLimit", "exportLimit", "from", "to"], true);
         const replayWindow = parseReplayWindowQuery(url.searchParams, true);
