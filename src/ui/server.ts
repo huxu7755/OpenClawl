@@ -1770,6 +1770,145 @@ export function startUiServer(port: number, toolClient: ToolClient): Server {
         });
       }
 
+      // === Message API ===
+      if (method === "GET" && path === "/api/messages") {
+        assertAllowedQueryParams(url.searchParams, ["limit"], true);
+        const limit = readPositiveIntQuery(url.searchParams.get("limit"), "limit", 50, true, 200);
+        const { readRecentMessages } = await import("../runtime/message-insights.js");
+        const messages = await readRecentMessages(limit);
+        return writeJson(res, 200, {
+          ok: true,
+          count: messages.length,
+          messages,
+        });
+      }
+
+      if (method === "GET" && path === "/api/messages/overview") {
+        assertAllowedQueryParams(url.searchParams, [], true);
+        const { getMessagesOverview } = await import("../runtime/message-insights.js");
+        const overview = await getMessagesOverview();
+        return writeJson(res, 200, {
+          ok: true,
+          ...overview,
+        });
+      }
+
+      if (method === "POST" && path === "/api/messages/send") {
+        assertMutationAuthorized(req, "/api/messages/send");
+        assertJsonContentType(req);
+        const payload = expectObject(await readJsonBody(req), "send payload");
+        const channel = typeof payload.channel === "string" ? payload.channel : "";
+        const target = typeof payload.target === "string" ? payload.target : "";
+        const message = typeof payload.message === "string" ? payload.message : "";
+        if (!channel || !target || !message) {
+          throw new RequestValidationError("channel, target and message are required", 400);
+        }
+        const { sendMessage } = await import("../runtime/message-insights.js");
+        const result = await sendMessage({
+          channel,
+          target,
+          message,
+          accountId: typeof payload.accountId === "string" ? payload.accountId : undefined,
+          replyTo: typeof payload.replyTo === "string" ? payload.replyTo : undefined,
+          silent: payload.silent === true,
+        });
+        return writeJson(res, result.status === "sent" ? 200 : 500, {
+          ok: result.status === "sent",
+          ...result,
+        });
+      }
+
+      if (method === "GET" && path === "/api/messages/templates") {
+        assertAllowedQueryParams(url.searchParams, [], true);
+        const { loadTemplates } = await import("../runtime/message-insights.js");
+        const templates = await loadTemplates();
+        return writeJson(res, 200, {
+          ok: true,
+          count: templates.length,
+          templates,
+        });
+      }
+
+      if (method === "POST" && path === "/api/messages/templates") {
+        assertMutationAuthorized(req, "/api/messages/templates");
+        assertJsonContentType(req);
+        const payload = expectObject(await readJsonBody(req), "template payload");
+        const name = typeof payload.name === "string" ? payload.name : "";
+        const channel = typeof payload.channel === "string" ? payload.channel : "";
+        const content = typeof payload.content === "string" ? payload.content : "";
+        if (!name || !channel || !content) {
+          throw new RequestValidationError("name, channel and content are required", 400);
+        }
+        const { createTemplate } = await import("../runtime/message-insights.js");
+        const template = await createTemplate(name, channel, content);
+        return writeJson(res, 201, {
+          ok: true,
+          template,
+        });
+      }
+
+      if (method === "PATCH" && path.startsWith("/api/messages/templates/")) {
+        assertMutationAuthorized(req, "/api/messages/templates/:id");
+        assertJsonContentType(req);
+        const templateId = decodeURIComponent(path.slice("/api/messages/templates/".length));
+        const payload = expectObject(await readJsonBody(req), "template payload");
+        const { updateTemplate } = await import("../runtime/message-insights.js");
+        const template = await updateTemplate(templateId, {
+          name: typeof payload.name === "string" ? payload.name : undefined,
+          channel: typeof payload.channel === "string" ? payload.channel : undefined,
+          content: typeof payload.content === "string" ? payload.content : undefined,
+        });
+        if (!template) {
+          return writeJson(res, 404, { ok: false, error: "Template not found" });
+        }
+        return writeJson(res, 200, { ok: true, template });
+      }
+
+      if (method === "DELETE" && path.startsWith("/api/messages/templates/")) {
+        assertMutationAuthorized(req, "/api/messages/templates/:id");
+        const templateId = decodeURIComponent(path.slice("/api/messages/templates/".length));
+        const { deleteTemplate } = await import("../runtime/message-insights.js");
+        const deleted = await deleteTemplate(templateId);
+        return writeJson(res, deleted ? 200 : 404, {
+          ok: deleted,
+        });
+      }
+
+      if (method === "POST" && path === "/api/messages/templates/send") {
+        assertMutationAuthorized(req, "/api/messages/templates/send");
+        assertJsonContentType(req);
+        const payload = expectObject(await readJsonBody(req), "send template payload");
+        const templateId = typeof payload.templateId === "string" ? payload.templateId : "";
+        const target = typeof payload.target === "string" ? payload.target : "";
+        const variables = payload.variables && typeof payload.variables === "object" ? payload.variables as Record<string, string> : {};
+        if (!templateId || !target) {
+          throw new RequestValidationError("templateId and target are required", 400);
+        }
+        const { sendTemplateMessage } = await import("../runtime/message-insights.js");
+        const result = await sendTemplateMessage(
+          templateId,
+          target,
+          variables,
+          typeof payload.accountId === "string" ? payload.accountId : undefined
+        );
+        return writeJson(res, result.status === "sent" ? 200 : 500, {
+          ok: result.status === "sent",
+          ...result,
+        });
+      }
+
+      if (method === "GET" && path.startsWith("/api/messages/channels/")) {
+        const channel = decodeURIComponent(path.slice("/api/messages/channels/".length));
+        assertAllowedQueryParams(url.searchParams, [], true);
+        const { getChannelAccounts } = await import("../runtime/message-insights.js");
+        const accounts = await getChannelAccounts(channel);
+        return writeJson(res, 200, {
+          ok: true,
+          channel,
+          accounts,
+        });
+      }
+
       if (method === "GET" && path === "/api/replay/index") {
         assertAllowedQueryParams(url.searchParams, ["timelineLimit", "digestLimit", "exportLimit", "from", "to"], true);
         const replayWindow = parseReplayWindowQuery(url.searchParams, true);
