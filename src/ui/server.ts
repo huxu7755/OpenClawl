@@ -1501,6 +1501,132 @@ export function startUiServer(port: number, toolClient: ToolClient): Server {
         });
       }
 
+      // === Doctor API ===
+      if (method === "GET" && path === "/api/doctor") {
+        assertAllowedQueryParams(url.searchParams, ["limit"], true);
+        const limit = readPositiveIntQuery(url.searchParams.get("limit"), "limit", 10, true, 100);
+        const { readRecentDoctorChecks } = await import("../runtime/doctor-insights.js");
+        const checks = await readRecentDoctorChecks(limit);
+        return writeJson(res, 200, {
+          ok: true,
+          count: checks.length,
+          checks,
+        });
+      }
+
+      if (method === "POST" && path === "/api/doctor") {
+        assertMutationAuthorized(req, "/api/doctor");
+        assertAllowedQueryParams(url.searchParams, [], true);
+        const { runDoctorCheck } = await import("../runtime/doctor-insights.js");
+        const result = await runDoctorCheck();
+        return writeJson(res, 200, {
+          ok: true,
+          result,
+        });
+      }
+
+      if (method === "POST" && path === "/api/doctor/fix") {
+        assertMutationAuthorized(req, "/api/doctor/fix");
+        assertAllowedQueryParams(url.searchParams, [], true);
+        const { runDoctorFix } = await import("../runtime/doctor-insights.js");
+        const result = await runDoctorFix();
+        return writeJson(res, 200, {
+          ok: true,
+          ...result,
+        });
+      }
+
+      // === Channels API ===
+      if (method === "GET" && path === "/api/channels") {
+        assertAllowedQueryParams(url.searchParams, [], true);
+        const { getChannelsOverview } = await import("../runtime/channels-insights.js");
+        const overview = await getChannelsOverview();
+        return writeJson(res, 200, {
+          ok: true,
+          ...overview,
+        });
+      }
+
+      if (method === "GET" && path.startsWith("/api/channels/")) {
+        const channelType = decodeURIComponent(path.slice("/api/channels/".length));
+        assertAllowedQueryParams(url.searchParams, [], true);
+        const { getChannelConfig } = await import("../runtime/channels-insights.js");
+        const config = await getChannelConfig(channelType);
+        return writeJson(res, 200, {
+          ok: true,
+          channelType,
+          config,
+        });
+      }
+
+      if (method === "POST" && path.startsWith("/api/channels/")) {
+        assertMutationAuthorized(req, "/api/channels/:type/:action");
+        assertJsonContentType(req);
+        const parts = decodeURIComponent(path.slice("/api/channels/".length)).split("/");
+        const channelType = parts[0];
+        const action = parts[1] || "status";
+        const { executeChannelCommand } = await import("../runtime/channels-insights.js");
+        const result = await executeChannelCommand(channelType, action as any);
+        return writeJson(res, result.success ? 200 : 400, {
+          ok: result.success,
+          ...result,
+        });
+      }
+
+      // === Gateway Control API ===
+      if (method === "GET" && path === "/api/gateway") {
+        assertAllowedQueryParams(url.searchParams, [], true);
+        const { getGatewayStatus } = await import("../runtime/gateway-control.js");
+        const status = await getGatewayStatus();
+        return writeJson(res, 200, {
+          ok: true,
+          ...status,
+        });
+      }
+
+      if (method === "GET" && path === "/api/gateway/health") {
+        assertAllowedQueryParams(url.searchParams, [], true);
+        const { checkGatewayHealth } = await import("../runtime/gateway-control.js");
+        const health = await checkGatewayHealth();
+        return writeJson(res, 200, {
+          ok: true,
+          ...health,
+        });
+      }
+
+      if (method === "POST" && path === "/api/gateway/start") {
+        assertMutationAuthorized(req, "/api/gateway/start");
+        assertAllowedQueryParams(url.searchParams, [], true);
+        const { startGateway } = await import("../runtime/gateway-control.js");
+        const result = await startGateway();
+        return writeJson(res, result.success ? 200 : 500, {
+          ok: result.success,
+          ...result,
+        });
+      }
+
+      if (method === "POST" && path === "/api/gateway/stop") {
+        assertMutationAuthorized(req, "/api/gateway/stop");
+        assertAllowedQueryParams(url.searchParams, [], true);
+        const { stopGateway } = await import("../runtime/gateway-control.js");
+        const result = await stopGateway();
+        return writeJson(res, result.success ? 200 : 500, {
+          ok: result.success,
+          ...result,
+        });
+      }
+
+      if (method === "POST" && path === "/api/gateway/restart") {
+        assertMutationAuthorized(req, "/api/gateway/restart");
+        assertAllowedQueryParams(url.searchParams, [], true);
+        const { restartGateway } = await import("../runtime/gateway-control.js");
+        const result = await restartGateway();
+        return writeJson(res, result.success ? 200 : 500, {
+          ok: result.success,
+          ...result,
+        });
+      }
+
       if (method === "GET" && path === "/usage-cost") {
         assertAllowedQueryParams(url.searchParams, [], true);
         res.statusCode = 302;
